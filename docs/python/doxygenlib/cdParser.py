@@ -28,6 +28,7 @@
 # to traverse the XML and ask the writer plugin to format the
 # various doc strings.
 #
+from __future__ import annotations
 
 import xml.sax.saxutils
 import xml.sax.handler
@@ -37,6 +38,7 @@ import xml.etree.ElementTree
 
 from .cdUtils import *
 from .cdDocElement import *
+
 
 class XMLNode:
     """
@@ -49,16 +51,16 @@ class XMLNode:
         self.name = name
         self.attrs = attrs
         self.text = text
-        self.childNodes = []
+        self.childNodes: list[XMLNode] = []
 
     def __repr__(self) -> str:
         return "XMLNode(%s, %s, ...)" % (self.name, self.attrs.items())
 
-    def addChildNode(self, node):
+    def addChildNode(self, node: XMLNode):
         """Append the specifed node to the children of this node."""
         self.childNodes.append(node)
 
-    def isText(self):
+    def isText(self) -> bool:
         """Return True if the current node contains text data."""
         return self.name == '#text' and len(self.text)
 
@@ -71,7 +73,7 @@ class XMLNode:
                 return v
         return defVal
 
-    def findNode(self, nodeName):
+    def findNode(self, nodeName: str) -> XMLNode | None:
         """Find the named node underneath this one."""
         for child in self.childNodes:
             if child.name == nodeName:
@@ -101,7 +103,7 @@ class XMLNode:
         """Return the value of the 'prot' attribute for this node."""
         return self.getAttrValue('prot')
 
-    def getLocation(self):
+    def getLocation(self) -> tuple[str, str]:
         """Return a (lineno,filename) tuple for the location of this node."""
         locNode = self.findNode('location')
         if not locNode is None:
@@ -120,17 +122,17 @@ class XMLParser(xml.sax.handler.ContentHandler):
         self.__curDepth = -1
         self.__textNode = []
 
-    def startNode(self, name, attrs, text):
+    def startNode(self, name: str, attrs, text):
         self.__curNode = XMLNode(self.__curNode, name, attrs, text)
         if self.__curNode.parent == None:
             self.__rootNodes.append(self.__curNode)
 
-    def endNode(self, name):
+    def endNode(self, name: str):
         if self.__curNode.parent != None:
             self.__curNode.parent.addChildNode(self.__curNode)
         self.__curNode = self.__curNode.parent
 
-    def startElement(self, name, attrs):
+    def startElement(self, name: str, attrs):
         # flush out any text for the current node before starting a new one
         if self.__curDepth >= 0 and self.__textNode[self.__curDepth]:
             self.startNode('#text', None, self.__textNode[self.__curDepth])
@@ -144,7 +146,7 @@ class XMLParser(xml.sax.handler.ContentHandler):
         # finally, start the new node
         self.startNode(name, attrs, None)
 
-    def endElement(self, name):
+    def endElement(self, name: str):
         # flush out any text for the current node before closing it
         if self.__textNode[self.__curDepth]:
             self.startNode('#text', None, self.__textNode[self.__curDepth])
@@ -199,7 +201,7 @@ class Parser:
         except Exception:
             return False
 
-    def parseDoxygenIndexFile(self, doxygen_index_file):
+    def parseDoxygenIndexFile(self, doxygen_index_file: str):
         """Parse a set of files as listed in a doxygen-generated index.xml"""
 
         Debug("Attempting to parse Doxygen index file: '%s'" % doxygen_index_file)
@@ -256,7 +258,7 @@ class Parser:
     # DocElement nodes to describe each documentation element
     #
 
-    def traverse(self, writerClass):
+    def traverse(self, writerClass) -> list[DocElement]:
         """Traverse the XML tree and builds DocElements for each item."""
         
         # ensure we have a class to create our doc strings for us
@@ -273,7 +275,7 @@ class Parser:
 
         return self.docElements
 
-    def __traverse_r(self, xmlNode):
+    def __traverse_r(self, xmlNode: XMLNode) -> list[DocElement]:
         """Recursive continuation of the traverse() method."""
         resultList = []
         
@@ -292,7 +294,7 @@ class Parser:
 
         return resultList
 
-    def __resolveInnerClassRefs(self, objlist):
+    def __resolveInnerClassRefs(self, objlist: list[DocElement]):
         # Walk the tree and accumulate a map of innerclass refs with their
         # parents.  Then walk the tree again finding classes with the
         # matching names.  For each one found, modify the name and inject it
@@ -302,7 +304,7 @@ class Parser:
             refs = self.__findInnerClassRefs(o)
             self.__resolveInnerClassRefs_r(None, o, refs)
             
-    def __findInnerClassRefs(self, obj):
+    def __findInnerClassRefs(self, obj: DocElement) -> dict[str, DocElement]:
         # returns a dictionary mapping from inner class names to the parents
         # that want them in this subtree.
         ret = {}
@@ -315,7 +317,7 @@ class Parser:
                     ret.update(self.__findInnerClassRefs(child))
         return ret
 
-    def __resolveInnerClassRefs_r(self, parent, obj, refs):
+    def __resolveInnerClassRefs_r(self, parent: DocElement, obj: DocElement, refs: dict[str, DocElement]):
         if not parent is None and obj.isClass():
             if obj.name in refs:
                 refname = obj.name
@@ -333,7 +335,7 @@ class Parser:
     # the doc strings, and creates DocElement structures for each instance.
     #
 
-    def __getDocStringFromWriter(self, node, nodeName):
+    def __getDocStringFromWriter(self, node: XMLNode, nodeName: str) -> tuple[str, list[str]]:
         """Call the Writer plugin to format the docstring for this node."""
         
         docstring = ''
@@ -344,7 +346,7 @@ class Parser:
             tags = self.writer.getDocTags(nodeUnder)
         return docstring, tags
 
-    def __getAllDocStrings(self, node, nodeName):
+    def __getAllDocStrings(self, node: XMLNode, nodeName: str) -> dict:
         """Ask the Writer plugin to fill in all of the doc strings."""
         Debug("Calling Writer plugin on node '%s'" % nodeName)
         ret = {}
@@ -354,7 +356,7 @@ class Parser:
         ret['tags'] = tags0 + tags1 + tags2
         return ret
 
-    def __getAllParams(self, node):
+    def __getAllParams(self, node: XMLNode) -> list[Param]:
         """Get the name and type of each parameter of a function."""
         params = []
         for child in node.childNodes:
@@ -365,7 +367,7 @@ class Parser:
                 params.append(Param(ptype, pname, pdefault))
         return params
 
-    def __createDocElement(self, node):
+    def __createDocElement(self, node: XMLNode) -> DocElement:
         """Create a DocElement object for the current node."""
         ret = None
         if node.name == 'doxygen':

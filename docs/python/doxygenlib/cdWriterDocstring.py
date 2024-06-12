@@ -34,6 +34,7 @@
 #   Writer.generate() - write the list of all docs to an output file.
 #      This is called once the entire file has been traversed.
 #
+from __future__ import annotations
 
 import importlib
 import os
@@ -42,8 +43,8 @@ import sys
 import textwrap
 import types
 
-from typing import Dict
-
+from .cdDocElement import DocElement
+from .cdParser import XMLNode
 from .cdUtils import *
 
 
@@ -81,7 +82,7 @@ def importPxrModule(moduleName: str) -> types.ModuleType:
     """
     return importlib.import_module(f"pxr.{moduleName}")
 
-def getAllPxrModules() -> Dict[str, types.ModuleType]:
+def getAllPxrModules() -> dict[str, types.ModuleType]:
     """Find and import all pxr.* modules
 
     Returns a dictionary mapping from submodule name to module object
@@ -124,7 +125,7 @@ class Writer:
     # we can combine property docstrings for getters/setters.
     propertyTable = {}
 
-    def __init__(self, packageName, moduleName):
+    def __init__(self, packageName: str, moduleName: str):
 
         # Import the python module...
         if packageName == "pxr":
@@ -135,12 +136,12 @@ class Writer:
             except ImportError:
                 Error("Could not import %s.%s" % (packageName, moduleName))
         self.prefix = self.module.__name__.split('.')[-1]
-        self.seenPaths = {}
-        self.propertyTable = {}
+        self.seenPaths: dict[str, list[tuple[bool, str, str]]] = {}
+        self.propertyTable: dict[str, str] = {}
 
     # Unload an imported module. Used when processing multiple modules at
     # once, to avoid matching entities on already-processed modules.
-    def unloadModule(self, moduleName):
+    def unloadModule(self, moduleName: str):
         self.module = None
         del moduleName
         #del sys.modules[moduleName]
@@ -150,7 +151,7 @@ class Writer:
     # return a formatted string - called during Parser.traverse()
     #
 
-    def getDocString(self, node):
+    def getDocString(self, node: XMLNode) -> str:
         """
         Public API call to convert an XML tree into a docstring.
         """
@@ -163,14 +164,14 @@ class Writer:
 
         return docstring
     
-    def getDocTags(self, node):
+    def getDocTags(self, node: XMLNode) -> list[str]:
         """
         Public API to retrieve tags from within an XML node's assorted docstrings.
         Reserved for future use, currently no special doc tags are used
         """
         return list()
 
-    def __convertNode(self, node, sep=' '):
+    def __convertNode(self, node: XMLNode, sep=' ') -> str:
         """
         return a string representation of the current XML node and
         all of its children, separating each section of text with
@@ -258,7 +259,7 @@ class Writer:
         result = re.sub(r'([A-Za-z])&([A-Za-z])', r'\1 & \2', result)
         return result
 
-    def __wordWrapDocString(self, lines):
+    def __wordWrapDocString(self, lines: list[str]) -> str:
 
         # support the PARA and NEWLINE tokens that we inserted above
         newlines = []
@@ -326,7 +327,7 @@ class Writer:
     # all out to the output __DOC.py file
     #
 
-    def generate(self, output_file, docElements):
+    def generate(self, output_file: str, docElements: list[DocElement]) -> bool:
         """Build the output file contents and write it to the output file."""
         # build the list of lines to output to the file
         bodylines = []
@@ -366,7 +367,7 @@ class Writer:
 
         return True
 
-    def __generate_r(self, docElem):
+    def __generate_r(self, docElem: list[DocElement]) -> list[str]:
         """Recursive continuation of generate()."""
         ret = []
         for childName, childObjectList in docElem[-1].children.items():
@@ -420,7 +421,8 @@ class Writer:
                 ret += self.__generate_r(docElem + [child])
         return ret
 
-    def __pathGenerator(self, parentPath, overloads):
+    def __pathGenerator(self, parentPath: list[DocElement], overloads: list[DocElement]
+                        ) -> tuple[list[str], list[str], list[str]]:
         ret = []
         pret = [] # this is used for a potential python property path
         pret2 = []
@@ -465,7 +467,7 @@ class Writer:
 
         return (ret, pret, pret2)
 
-    def __getPythonObject(self, path):
+    def __getPythonObject(self, path: list[str]) -> object | None:
         """Returns the python object corresponding to the provided path."""
         obj = None
         try:
@@ -482,9 +484,10 @@ class Writer:
         
         return obj
 
-    def __getPythonObjectByPath(self, path):
-        """Returns a tuple containing the python object corresponding to the 
-        provided path and the path itself. It returns the path just in case we 
+    def __getPythonObjectByPath(self, path: list[str]
+                                ) -> tuple[object | None, list[str], bool]:
+        """Returns a tuple containing the python object corresponding to the
+        provided path and the path itself. It returns the path just in case we
         had to modify shorten the path list because the object we're looking for
         is wrapped to a different hierarchy level than the corresponding C++
         object."""
@@ -508,7 +511,8 @@ class Writer:
                 
         return (obj, path, jumped)
 
-    def __getPythonObjectAndPath(self, parentPath, overloads):
+    def __getPythonObjectAndPath(self, parentPath: list[DocElement], overloads: list[DocElement]
+                                 ) -> tuple[object | None, str, object | None, str | None, bool]:
         """Return the full Python path for a module/class/method.
         The first 2 items in the tuple are the verbatim python object and
         corresponding path, if it exists.  The second 2 items in the tuple
@@ -541,7 +545,7 @@ class Writer:
 
         return (obj, '.'.join(pypath), pobj, '.'.join(ppypath), jumped)
 
-    def __convertTypeName(self, cppName):
+    def __convertTypeName(self, cppName: str) -> str:
         """Convert a C++ type name into a Python type name."""
         # get rid of const, volatile, &, *.
         ret = cppName.strip()
@@ -571,7 +575,7 @@ class Writer:
             ret = 'int'
         return ret
 
-    def __convertTypeNameToken(self, cppName):
+    def __convertTypeNameToken(self, cppName: str) -> str:
         ret = cppName
 
         # words are guaranteed to come in by themselves
@@ -615,7 +619,7 @@ class Writer:
 
         return ret
 
-    def __convertCppSyntax(self, line):
+    def __convertCppSyntax(self, line: str) -> str:
         """Convert C++ terminology into Python terminology."""
         ret = line
         ret = ret.replace('NULL', 'None')
@@ -623,8 +627,8 @@ class Writer:
         ret = ret.replace('libraries', 'modules')
 
         return ret
-            
-    def __getSignatureString(self, pyname, pyobj, doxy):
+
+    def __getSignatureString(self, pyname: str, pyobj: object, doxy: DocElement) -> str:
         """Describe the signature for a single method call."""
         if doxy.isFunction():
             cnt = 1;
@@ -645,7 +649,8 @@ class Writer:
             return pyname + sig + '\n'
         return None
 
-    def __getSignatureDescription(self, pyname, pyobj, doxy):
+    def __getSignatureDescription(self, pyname: str, pyobj: object, doxy: DocElement
+                                  ) -> list[str] | None:
         """Return the description of each argument in a method call."""
         if doxy.isFunction():
             cnt = 0
@@ -658,8 +663,13 @@ class Writer:
             return lines
         return None
 
-    def __getShortDescription(self, pyname, pyobj, doxy):
-        """Return the top-level description of the class/method."""
+    def __getShortDescription(self, pyname: str, pyobj: object, doxy: DocElement
+                              ) -> list[str]:
+        """Return the top-level description of the class/method.
+
+        For a function or method this is its signature.
+        For a property it is its return type.
+        """
         ret = []
         if type(pyobj) == property:
             # Try to parse out the type for this property from the
@@ -673,9 +683,11 @@ class Writer:
             ret.append(self.__getSignatureString(pyname, pyobj, doxy))
         return ret
 
-    def __getDocumentation(self, pyname, pyobj, doxy):
+    def __getDocumentation(self, pyname: str, pyobj: object, doxy: DocElement) -> list[str]:
         """Return the actual (brief and details) doc string."""
         lines = []
+        # note that the the 'brief' and 'detailed' entries are each the results of
+        # calls to getDocString() during the Parser.traverse() phase.
         if doxy.doc['brief']:
             lines.append(doxy.doc['brief'])
         if doxy.doc['detailed']:
@@ -685,7 +697,7 @@ class Writer:
             newLines.append(self.__convertCppSyntax(line))
         return newLines
 
-    def __getFullDoc(self, pyname, pyobj, doxy):
+    def __getFullDoc(self, pyname: str, pyobj: object, doxy: DocElement) -> list[str]:
         """Return the complete class/method description for output."""
 
         # opt-out for pyobj's that contain the notinpython element
@@ -694,18 +706,20 @@ class Writer:
         # make the doxy element static if it is tagged as such
         if ATTR_STATIC_METHOD in doxy.doc['tags']:
             doxy.static = 'yes'
-
+        
         lines = self.__getShortDescription(pyname, pyobj, doxy)
         if doxy.isFunction() and type(pyobj) != property:
-            lines += self.__getSignatureDescription(pyname, pyobj, doxy)
-            lines.append('')
+            description = self.__getSignatureDescription(pyname, pyobj, doxy)
+            if description is not None:
+                lines += description
+                lines.append('')
         lines += self.__getDocumentation(pyname, pyobj, doxy)
         lines.append('')
         return lines
 
     @classmethod
-    def __stripBoostSig(cls, doc):
-        def looksLikeBoostSig(l):
+    def __stripBoostSig(cls, doc: str) -> str | None:
+        def looksLikeBoostSig(l: str) -> bool:
             return bool(l and (l[0].isalnum() or l[0] == "_") and ' -> ' in l)
 
         lines = doc.strip().splitlines()
@@ -725,8 +739,9 @@ class Writer:
             # None indicates that the existing __doc__ attr should be left as-is
             return None
 
-    def __getOutputFormat(self, pypath, pyobj, overloads):
-        """Return the line that installs the docstring into the namespace."""
+    def __getDocstring(self, pypath: str, pyobj: object, overloads: list[DocElement]
+                       ) -> str | None:
+        """Return the docstring."""
 
         docString = ''
 
@@ -768,6 +783,15 @@ class Writer:
                     if desc:
                         lines += desc
             docString += '\n'.join(lines)
+        return docString
+
+    def __getOutputFormat(self, pypath: str, pyobj: object, overloads: list[DocElement]
+                          ) -> str | None:
+        """Return the line that installs the docstring into the namespace."""
+
+        docString = self.__getDocstring(pypath, pyobj, overloads)
+        if docString is None:
+            return None
 
         # work out the attribute to set to install this docstring
         words = pypath.split('.')
